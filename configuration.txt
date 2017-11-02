@@ -1,0 +1,1 @@
+{"sampleRate": 300, "preTrigger": 3, "postTrigger": 2, "threshold": 0.2, "timeOnChannel": 10, "amplitude": 0.5, "amplification": 127, "highPassFilter": "on"}

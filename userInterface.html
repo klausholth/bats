@@ -1,0 +1,508 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <meta charset="utf-8">
+    <title>Tabs</title>
+    <link rel="stylesheet" href="https://ajax.googleapis.com/ajax/libs/jqueryui/1.12.1/themes/smoothness/jquery-ui.css">
+    <link rel="stylesheet" type="text/css" href="css/userInterface.css">
+    <link rel="stylesheet" type="text/css" href="css/channels.css">
+    <link rel="stylesheet" type="text/css" href="css/simple-slider.css">
+
+    <script src="/socket.io/socket.io.js"></script>
+    <script src="https://ajax.googleapis.com/ajax/libs/jquery/1.7.2/jquery.js"></script>
+    <script type="text/javascript" src="js/smoothie.js"></script>
+    <script type="text/javascript" src="js/simple-slider.js"></script>
+    
+    <script type="text/javascript" src="js/commonParameters.js"></script>
+    <script type="text/javascript" src="js/timeline.js"></script>
+    <script type="text/javascript" src="js/channels.js"></script> 
+    <script type="text/javascript" src="js/socketConfig.js"></script>
+    <script type="text/javascript" src="js/sliders.js"></script>
+    <script type="text/javascript" src="js/popups.js"></script>
+
+
+    <script>
+        var updateGraphs;
+        var dT = 20;
+        var selection;
+        var receivedData = [];
+
+        $(document).ready(function() {
+            var record = true;
+            var gallery = true;
+
+            /* Parameters for the reestablishment of the configuration of the mikes */
+
+            var oldSampleRate;
+            var oldPreTrigger;
+            var oldPostTrigger;
+            var oldThreshold;
+            var oldTimeOnChannel;
+            var oldAmplitude;
+            var oldAmplification;
+            var oldHighPassFilter;
+
+            /* Parametre til update af konfiguration af mikrofoner */
+
+            var newSampleRate;
+            var newPreTrigger;
+            var newPostTrigger;
+            var newThreshold;
+            var newTimeOnChannel;
+            var newAmplitude;
+            var newAmplification;
+            var newHighPassFilter;
+            var newConfig = {};
+            
+            var alertLevel = 0;
+            var fileSaveName;
+
+         
+            var numberOfRows = numberOfChannels / 2;
+            
+            /* When the cycle of mike-groups is started, it is identified by this variable. It is used to remove the cycle */
+            
+            var cycleTimerId;
+            var cycleTime;
+
+            var chosenChannels = [];
+            for (i = 0; i < numberOfChannels; i++) {
+                chosenChannels[i] = i + 1;
+            }
+
+            /* Styring af jQuery UI tabs - bør skiftes ud med en mindre kompliceret plugin */
+
+            buildForms();
+
+            $("#a").css("height", 800 - 20);
+     //       $("#b").css("height", 800 - 20);
+            var contentsWidth = window.innerWidth;
+            $("#contents").css("width", contentsWidth - 50);
+            $('#outOfSequence').css("visibility", "hidden");
+            $('#packageLoss').css("visibility", "hidden");
+
+            $('#saveButton').css("visibility", "hidden");
+            $('#cancelButton').css("visibility", "hidden");
+
+            $('#recordButton').click(function() {
+            /* When button is clicked a message is sent to the server, requesting the recording of the sound. The button is disabled
+               and made semi-transparent. I will be reestablished when the client receives an all-clear message from the server
+               (see socketConfig.js) */
+               
+                socket.emit("startRecord", record);
+                socket.emit("getDate");
+                $('#recordButton').css("pointer-events", "none");
+                $('#recordButton').css("opacity", "0.5");
+            });
+            
+            $('#saveRecord').click(function() {
+              fileSaveName = $("#fileName").val() + "_" + $("#fileNumber").val();
+              socket.emit("saveRecord", fileSaveName);
+            });
+
+            $('#galleryButton').click(function() {
+                socket.emit("startGallery", gallery);
+            });
+            
+            $('#microphonesButton').click(function() {
+                    $("#b").css("display", "block");
+                    }
+                    );  
+                    
+            $('#channelStatusExit').click(function() {
+                    $("#b").css("display", "none");
+                    $("#microphonesButton").css("background-color", "green");
+                }
+            );
+                             
+            
+            /* The Customize button is used to make a small menu pop up and disappear */
+            
+            $('#custButton').click(function() {
+                    $("#customize").css("visibility", "visible");
+                    buildSelect();
+                }
+            );
+            
+            $('#customizeExit').click(
+                function() {
+                  clearInterval(cycleTimerId);
+                  $("#customize").css("visibility", "hidden");
+                  }
+                );             
+            
+            $('#configButton').click(
+                function() {
+                  $("#configWrapper").css("display", "block");
+                  $("#environmentParameterWrapper").css("display", "none");
+                  }
+                );    
+                
+            $('#configExit').click(
+                function() {
+                  $("#configWrapper").css("display", "none");
+                  $('#saveButton').css("visibility", "hidden");
+                  $('#cancelButton').css("visibility", "hidden");
+                  }
+                );                 
+                
+            $('#environmentButton').click(
+                function() {
+                    $("#environmentParameterWrapper").css("display", "block");
+                    $("#configWrapper").css("display", "none");
+                  }
+                );   
+                
+            $('#environmentExit').click(
+                function() {
+                  $("#environmentParameterWrapper").css("display", "none");
+                  }
+                );                                     
+
+            $('#saveButton').click(function() {
+                /* New values in these input fields are written by the user as numbers without units. The lines below adds 
+                   the appropriate units when necessary */
+                   
+                newSampleRate = $('#sampleRate').val();
+                if (newSampleRate.indexOf("kHz") == -1) {
+                    $('#sampleRate').val(newSampleRate + " kHz");
+                }
+                newPreTrigger = $('#preTrigger').val();
+                if (newPreTrigger.indexOf("ms") == -1) $('#preTrigger').val(newPreTrigger + " ms");
+                newPostTrigger = $('#postTrigger').val();
+                if (newPostTrigger.indexOf("ms") == -1) $('#postTrigger').val(newPostTrigger + " ms");
+                newThreshold = $('#threshold').val();
+                $('#threshold').val(newThreshold);
+                newTimeOnChannel = $('#timeOnChannel').val();
+                if (newTimeOnChannel.indexOf("ms") == -1) $('#timeOnChannel').val(newTimeOnChannel + " ms");
+                newAmplitude = $('#amplitude').val();
+                $('#amplitude').val(newAmplitude);
+                newAmplification = $('#amplification').val();
+                $('#amplification').val(newAmplification);
+                newHighPassFilter = $('#highPassFilter').val();
+                $('#highPassFilter').val(newHighPassFilter);                
+
+                /* See line 51 for newConfig */
+                
+                newConfig.sampleRate = newSampleRate;
+                newConfig.preTrigger = newPreTrigger;
+                newConfig.postTrigger = newPostTrigger;
+                newConfig.threshold = newThreshold;
+                newConfig.timeOnChannel = newTimeOnChannel;
+                newConfig.amplitude = newAmplitude;
+                newConfig.amplification = newAmplification;
+                newConfig.highPassFilter = newHighPassFilter;
+
+           //     $('#saveButton').css("visibility", "hidden");
+           //     $('#cancelButton').css("visibility", "hidden");
+             //   $("#configWrapper").css("display", "none");
+                socket.emit("configUpdate", newConfig);
+                
+
+            });
+
+            $('#cancelButton').click(function() {
+
+                $('#sampleRate').val(oldSampleRate + " kHz");
+                $('#preTrigger').val(oldPreTrigger + " ms");
+                $('#postTrigger').val(oldPostTrigger + " ms");
+                $('#threshold').val(oldThreshold);
+                $('#timeOnChannel').val(oldTimeOnChannel + " ms");
+                $('#amplitude').val(oldAmplitude);
+                $('#amplification').val(oldAmplification);
+                $('#highPassFilter').val(oldHighPassFilter);
+
+           //     $('#saveButton').css("visibility", "hidden");
+          //      $('#cancelButton').css("visibility", "hidden");
+         //       $("#configWrapper").css("display", "none");
+
+            });
+            
+            
+            $('#ofOutSequenceButton').click(function() { $('#outOfSequence').css("visibility", "hidden");});
+            $('#packageLossButton').click(function() { $('#packageLoss').css("visibility", "hidden");});
+            
+            $("#startCycleButton").on("click", function() {
+                switchHiddenElements("first", cycleSliderValue);
+            });
+
+            $("#stopCycleButton").on("click", function() {
+                clearInterval(cycleTimerId);
+                showSelectedChannels("all");
+            });
+
+            $("#firstChannels").on("click", function() {
+                clearInterval(cycleTimerId);
+                showSelectedChannels("first");
+            });
+
+
+            $("#secondChannels").on("click", function() {
+                clearInterval(cycleTimerId);
+                showSelectedChannels("second");
+            });
+
+            $("#allChannels").on("click", function() {
+                clearInterval(cycleTimerId);
+                showSelectedChannels("all");
+            });
+            
+            $("#showChannelsButton").on("click", function() {
+                clearInterval(cycleTimerId);
+                if (chosenNewChannels.indexOf("0") > -1) {showSelectedChannels("all");}
+                else {showSelectedChannels("free");}
+            });            
+            
+            
+
+            function showSelectedChannels(selection) {
+                if (selection == "first" || selection == "second") {
+                    shownNumberOfChannels = numberOfChannels/2;
+                    millisPerPixelValue = 12;
+                }
+                  if (selection == "free") {
+                    shownNumberOfChannels = chosenNewChannels.length;
+                    if (shownNumberOfChannels < 5) {millisPerPixelValue = 12;}
+                    else {millisPerPixelValue = 17;}
+                }              
+                
+                
+                if (selection == "all") {
+                    shownNumberOfChannels = numberOfChannels;
+                    millisPerPixelValue = 17;
+                }
+             
+                chosenChannels = [];
+                if (selection == "first" || selection == "all") {
+                    for (i = 1; i <= shownNumberOfChannels; i++) {
+                        chosenChannels.push(i);
+                    }
+                }
+                if (selection == "free") {
+                    for (i = 1; i <= shownNumberOfChannels; i++) {
+                        chosenChannels.push(parseInt(chosenNewChannels[i - 1]));
+                    }
+
+                }                
+                if (selection == "second") {
+                    if (shownNumberOfChannels == 4) { beginLoop = 5;}
+                    if (shownNumberOfChannels == 8) { beginLoop = 9;}
+                    endLoop = beginLoop + shownNumberOfChannels - 1;
+                    for (i = beginLoop; i <= endLoop; i++) {
+                        chosenChannels.push(i);
+                    }
+                }
+                
+                alertLevel = parseInt($("#outputFromAlertSlider").text(), 10);
+                buildTags(shownNumberOfChannels, alertLevel, chosenChannels, selection);
+                randomArray = [];
+                
+                for (i = 0; i < numberOfChannels; i++) {
+                    randomArray.push(new TimeSeries());
+                }
+                createTimeline(shownNumberOfChannels, selection);
+     //          updateGraphs = setInterval(updateTimeline, dT);
+            }
+
+            function switchHiddenElements(selection, time) {
+                showSelectedChannels("first");
+                cycleTimerId = setInterval(function() {
+                    if (selection == "first") {
+                        showSelectedChannels("first");
+                        selection = "second";
+                    } else {
+                        showSelectedChannels("second");
+                        selection = "first";
+                    }
+                }, cycleSliderValue);
+            }
+          
+            buildTags(numberOfChannels, alertLevel, chosenChannels, selection);
+            $('#showChannels').val(chosenChannels.join());
+            showSelectedChannels("all");    
+  //          updateGraphs = setInterval(updateTimeline, dT);
+            
+            var mikeStatusData = [];
+            for (i = 0; i < numberOfRows; i++) {
+                mikeStatusData[i] = ["Channel " + (2 * i + 1), "Channel " + (2 * i + 2)];
+            }
+            makeTable($("#b"), mikeStatusData);
+
+            var idArray = ['#sampleRate', '#preTrigger', '#postTrigger', '#threshold', '#timeOnChannel', '#amplitude', "#amplification", "#highPassFilter"];
+
+            for (i = 0; i < idArray.length; i++) {
+                $(idArray[i]).focus(function() {
+                    oldConfig();
+                    $(this).val("");
+                });
+            }
+
+            $('#fileName').focus(function() {
+          //      socket.emit("getDate");
+            });
+
+            $('#fileName').blur(function() {
+                $('#fileName').val("");
+            });
+
+            readAlertSlider();
+            readCycleSlider();
+
+            function oldConfig() {
+
+                oldSampleRate = $('#sampleRate').val().split(" ")[0];
+                oldPreTrigger = $('#preTrigger').val().split(" ")[0];
+                oldPostTrigger = $('#postTrigger').val().split(" ")[0];
+                oldThreshold = $('#threshold').val().split(" ")[0];
+                oldTimeOnChannel = $('#postTrigger').val().split(" ")[0];
+                oldAmplitude = $('#amplitude').val().split(" ")[0];
+                oldAmplification = $('#amplification').val().split(" ")[0];
+                oldHighPassFilter = $('#highPassFilter').val().split(" ")[0];
+                $('#saveButton').css("visibility", "visible");
+                $('#cancelButton').css("visibility", "visible");
+            }
+
+            function makeTable(container, data) {
+                var table = $("<table/>").addClass('channelTable');
+                $.each(data, function(rowIndex, r) {
+                    var row = $("<tr/>");
+                    $.each(r, function(colIndex, c) {
+                        channelNumber = 2 * rowIndex + colIndex + 1;
+                        row.append($("<td id = 'channel" + channelNumber + "' />").text(c));
+                    });
+                    table.append(row);
+                });
+                return container.append(table);
+            }
+            
+			function buildSelect() {
+				var s = $("<select multiple size = '" + numberOfChannels + "' id='selectId' name='selectName' />");
+				
+				for (i = 1; i <= numberOfChannels; i++) {
+					$("<option />", {
+						value: i,
+						text: "Microphone " + i, 
+						class: "channelOption"
+					}).appendTo(s);
+				}
+				s.prependTo("#selectForm");
+
+				$("#selectForm")
+					.change(function () {
+						var str = "";
+						chosenNewChannels = [];
+						$("select option:selected").each(function () {
+							chosenNewChannels.push($(this).val());
+						});
+					})
+					.trigger("change");
+
+			}            
+
+
+        });
+       
+    </script>
+        <script type="text/javascript" src="js/channels.js"></script>
+
+</head>
+
+<body onload="createTimeline(shownNumberOfChannels, 'init')">
+
+    <div id="configWrapper">
+                    <img id = "configExit" class = "formExit" src = "exit.png">
+                    <form id = "channelConfigurationForm"></form>
+                    <div id="saveButton" class="button">Save</div>
+                    <div id="cancelButton" class="button">Cancel</div>
+    </div>
+    
+    <div id="environmentParameterWrapper">
+           <img id = "environmentExit" class = "formExit" src = "exit.png">
+           <form id="environmentParameterForm"></form>
+    </div>    
+    
+    
+    
+    <div id="b">
+           <img id = "channelStatusExit" class = "formExit" src = "exit.png">    
+    </div>
+    <div id="contents">
+        <div id="header">
+            
+            <div id = "legendWrapper">
+                <span id="channelsLegend" class="headerLegend">Active Channels</span>
+                <span id="filenameLegend" class="headerLegend">File Name</span>
+                <span id="filenumberLegend" class="headerLegend">File Number</span>
+                <span id="systemStateLegend" class="headerLegend">System State</span>
+            </div>
+            <div id = "formWrapper">
+                <form>
+                    <input type="text" name="showChannels" id="showChannels" class="headerData" size="16" />
+                    <input type="text" name="fileName" id="fileName" class="headerData" size="10" />
+                    <input type="text" name="fileNumber" id="fileNumber" class="headerData" size="2" />
+                    <button id="saveRecord">Save</button>
+                    <input type="text" name="systemState" id="systemState" class="headerData" size="10" />
+                </form>
+            </div>
+                <table id = "buttonsTable">
+                  <tr>
+                    <td id="custButton" class="button">Select Channels</td>
+                    <td id="configButton" class="button">Ch. Parameters</td>
+                    <td id="recordButton" class="button" rowspan = "2">Record</td>
+                    <td id="galleryButton" class="button" rowspan = "2">Gallery</td>
+                    
+                  </tr>
+                  <tr>
+                    <td id="microphonesButton" class="button">Channel Status</td>
+                    <td id="environmentButton" class="button">Environment</td>
+                  </tr>
+                </table>            
+        </div>
+        <div id="graphs">
+            <div id="graphsLeft"></div>
+            <div id="graphsRight"></div>
+        </div>
+    </div>
+    <div id="customize">
+      <div id = "customizeLeft">
+        <div id="alertSliderText">Alert Level</div>
+        <input type="text" id="slider" data-slider="true" data-slider-range="0, 100">
+        <span id = "outputFromAlertSlider">0</span>
+        <div id="cycleSliderText">Cycle Time/secs</div>
+        <input type="text" id="cycleSlider" data-slider="true" data-slider-range="0, 10000">
+        <span id = "outputFromCycleSlider">0</span>
+        <button id="startCycleButton">Start cycle</button>
+        <button id="stopCycleButton">Stop cycle</button>
+        <button id="firstChannels">Channels 1 - 8</button>
+        <button id="secondChannels">Channels 9 - 16</button>
+        <button id="allChannels">Channels 1 - 16</button>
+      </div>
+      <div id = "customizeRight">
+        <img id = "customizeExit" class = "formExit" src = "exit.png">
+        <div id = "selectForm">
+        <button id="showChannelsButton">Show channels</button>
+        </div>
+      </div>      
+    </div>
+    
+            <div id = "outOfSequence">
+                <span>Package out of sequence</span>
+                <br/>
+                <span id = "timeOoS">Time: </span>
+                <br/>
+                <div id="ofOutSequenceButton" class="button">Close</div>
+            </div>
+            <div id = "packageLoss">
+                <span>Package loss</span>
+                <br/>
+                <span id = "timePL">Time: </span>
+                <br/>
+                <div id="packageLossButton" class="button">Close</div>
+            </div>    
+
+
+
+</body>
+
+</html>
